@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -17,13 +18,25 @@ type Bangs []Bang
 
 var bangs Bangs
 
-func loadBangs(filename string) error {
-	data, err := os.ReadFile(filename)
+func fetchBangs() error {
+	fmt.Println("Fetching bangs from DuckDuckGo...")
+
+	resp, err := http.Get("https://duckduckgo.com/bang.js")
 	if err != nil {
-		return fmt.Errorf("error reading file: %w", err)
+		return fmt.Errorf("error fetching bangs: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status code: %d", resp.StatusCode)
 	}
 
-	err = json.Unmarshal(data, &bangs)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error reading response: %w", err)
+	}
+
+	err = json.Unmarshal(body, &bangs)
 	if err != nil {
 		return fmt.Errorf("error parsing JSON: %w", err)
 	}
@@ -41,6 +54,7 @@ func findBang(trigger string) *Bang {
 			return &bang
 		}
 	}
+
 	return nil
 }
 
@@ -56,7 +70,6 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	for i, word := range words {
 		if strings.HasPrefix(word, "!") {
 			trigger := word
-
 			searchParts := append(words[:i], words[i+1:]...)
 			searchTerm := strings.Join(searchParts, " ")
 
@@ -73,17 +86,15 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	err := loadBangs("bangs.json")
+	err := fetchBangs()
 	if err != nil {
 		fmt.Println("Error loading bangs:", err)
-		fmt.Println("Make sure bangs.json exists in the current directory")
 		os.Exit(1)
 	}
 
 	http.HandleFunc("/", handleRequest)
 
 	fmt.Println("Server listening on http://localhost:8765")
-
 	err = http.ListenAndServe(":8765", nil)
 	if err != nil {
 		fmt.Println("Error:", err)
