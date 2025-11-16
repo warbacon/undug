@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 type Bang struct {
@@ -61,7 +62,18 @@ func findBang(trigger string) *Bang {
 	return bangsMap[trigger]
 }
 
+func logRedirect(start time.Time, action, query, url string) {
+	elapsed := time.Since(start)
+	fmt.Printf("[%s] %s (%.2fms)\n",
+		time.Now().Format("15:04:05"),
+		action,
+		float64(elapsed.Microseconds())/1000.0)
+	fmt.Printf("  Query: %s\n", query)
+	fmt.Printf("  URL:   %s\n", url)
+}
+
 func handleRequest(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
 	query := r.URL.Query().Get("q")
 	if query == "" {
 		http.Error(w, "No query provided", http.StatusBadRequest)
@@ -69,23 +81,26 @@ func handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	words := strings.Fields(query)
+	var redirectURL string
 
 	for i, word := range words {
-		if strings.HasPrefix(word, "!") {
-			trigger := word
+		if !strings.HasPrefix(word, "!") {
+			continue
+		}
+
+		if bang := findBang(word); bang != nil {
 			searchParts := append(words[:i], words[i+1:]...)
 			searchTerm := strings.Join(searchParts, " ")
-
-			bang := findBang(trigger)
-			if bang != nil {
-				url := strings.ReplaceAll(bang.U, "{{{s}}}", searchTerm)
-				http.Redirect(w, r, url, http.StatusFound)
-				return
-			}
+			redirectURL = strings.ReplaceAll(bang.U, "{{{s}}}", searchTerm)
+			logRedirect(start, "Bang redirect", query, redirectURL)
+			http.Redirect(w, r, redirectURL, http.StatusFound)
+			return
 		}
 	}
 
-	http.Redirect(w, r, "https://google.com/search?q="+query, http.StatusFound)
+	redirectURL = "https://google.com/search?q=" + query
+	logRedirect(start, "Google fallback", query, redirectURL)
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 func main() {
