@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 )
 
 type Bang struct {
@@ -20,7 +19,6 @@ type Bangs []Bang
 var (
 	bangs    Bangs
 	bangsMap map[string]*Bang
-	bangsMux sync.RWMutex
 )
 
 func fetchBangs() error {
@@ -46,13 +44,11 @@ func fetchBangs() error {
 		return fmt.Errorf("error parsing JSON: %w", err)
 	}
 
-	bangsMux.Lock()
 	bangsMap = make(map[string]*Bang, len(bangs))
 	for i := range bangs {
 		key := strings.ToLower(bangs[i].T)
 		bangsMap[key] = &bangs[i]
 	}
-	bangsMux.Unlock()
 
 	fmt.Printf("Loaded %d bangs\n", len(bangs))
 
@@ -62,9 +58,6 @@ func fetchBangs() error {
 func findBang(trigger string) *Bang {
 	trigger = strings.TrimPrefix(trigger, "!")
 	trigger = strings.ToLower(trigger)
-
-	bangsMux.RLock()
-	defer bangsMux.RUnlock()
 	return bangsMap[trigger]
 }
 
